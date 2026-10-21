@@ -43,6 +43,7 @@
       <div class="muted">Buying</div>
       <div id="state" class="big">…</div>
       <div id="seen" class="muted">waiting for the PC…</div>
+      <div id="capNote" class="warn" hidden>The loss cap stopped buying. Tap the green button to reset the counter and buy again.</div>
       <div style="margin-top:14px">
         <button id="startBtn" class="start">Start buying</button>
         <button id="pauseBtn" class="pause">Pause buying</button>
@@ -55,7 +56,7 @@
       <div class="row"><span class="muted">Profit (this run)</span><span id="pnl">–</span></div>
       <div class="row"><span class="muted">Trades / wins</span><span id="trades">–</span></div>
       <div class="row"><span class="muted">Wallet</span><span id="wallet">–</span></div>
-      <div class="row"><span class="muted">Loss cap</span><span id="cap">–</span></div>
+      <div class="row"><span class="muted">Loss cap (used / max)</span><span id="cap">–</span></div>
       <div class="row"><span class="muted">Wallets copied</span><span id="nwallets">–</span></div>
       <div class="row"><span class="muted">Live feed</span><span id="feed">–</span></div>
     </div>
@@ -108,15 +109,18 @@ const cad = (v) => (v >= 0 ? "+" : "−") + "$" + Math.abs(v).toFixed(2);
 function render(s) {
   const age = s.at ? Math.round((Date.now() - s.at.toMillis()) / 1000) : null;
   const fresh = age !== null && age < 90;
-  $("state").textContent = s.trading_on ? "ON" : "PAUSED";
-  $("state").className = "big " + (s.trading_on ? "on" : "off");
+  const capped = s.trading_on && (s.loss_now ?? 0) <= -(s.stop_cad ?? 0) && (s.stop_cad ?? 0) > 0;
+  $("state").textContent = capped ? "CAP HIT" : s.trading_on ? "ON" : "PAUSED";
+  $("state").className = "big " + (capped ? "warn" : s.trading_on ? "on" : "off");
+  $("startBtn").textContent = capped ? "Reset loss cap & start" : "Start buying";
+  $("capNote").hidden = !capped;
   $("seen").textContent = age === null ? "PC hasn't reported yet"
     : fresh ? `PC updated ${age}s ago` : `PC last seen ${Math.round(age / 60)} min ago — it may be off`;
   $("seen").className = fresh ? "muted" : "warn";
   $("pnl").textContent = cad(s.pnl_cad ?? 0); $("pnl").className = (s.pnl_cad ?? 0) >= 0 ? "on" : "off";
   $("trades").textContent = `${s.trades ?? 0} / ${s.wins ?? 0}`;
   $("wallet").textContent = `${(s.wallet_sol ?? 0).toFixed(4)} SOL`;
-  $("cap").textContent = `$${(s.stop_cad ?? 0).toFixed(2)}`;
+  $("cap").textContent = `$${Math.max(0, -(s.loss_now ?? 0)).toFixed(2)} / $${(s.stop_cad ?? 0).toFixed(2)}`;
   $("nwallets").textContent = s.wallets ?? "–";
   $("feed").textContent = s.feed ?? "–";
   const open = s.open || [];
