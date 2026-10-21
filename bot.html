@@ -72,6 +72,7 @@
       <ul id="open"><li class="muted">none</li></ul>
     </div>
 
+    <button id="refresh" class="ghost">Refresh</button>
     <button id="signout" class="ghost">Sign out</button>
   </section>
 </main>
@@ -148,12 +149,29 @@ function render(s) {
     : '<li class="muted">none</li>';
 }
 
-onAuthStateChanged(auth, (user) => {
+// Phones freeze the live connection when the screen is off or the tab is in the background,
+// so re-listen when the page comes back, when nothing has arrived for 45 s, or on the Refresh button.
+let last = null, gotAt = 0;
+function listen() {
   unsub.forEach((u) => u()); unsub = [];
-  $("login").hidden = !!user; $("panel").hidden = !user;
-  if (!user) return;
-  unsub.push(onSnapshot(doc(db, "bot", "status"), (snap) => snap.exists() && render(snap.data()),
+  if (!auth.currentUser) return;
+  gotAt = Date.now();
+  unsub.push(onSnapshot(doc(db, "bot", "status"), (snap) => { if (snap.exists()) { last = snap.data(); gotAt = Date.now(); render(last); } },
     (e) => { $("seen").textContent = "No access: " + e.code; $("seen").className = "warn"; }));
+}
+$("refresh").onclick = () => { $("seen").textContent = "Refreshing…"; listen(); };
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") listen(); });
+window.addEventListener("online", listen);
+setInterval(() => {
+  if (!auth.currentUser) return;
+  if (last) render(last);                        // keeps "PC updated Xs ago" counting
+  if (Date.now() - gotAt > 45000) listen();       // PC writes every 15 s - nothing for 45 s means a stuck connection
+}, 1000);
+
+onAuthStateChanged(auth, (user) => {
+  $("login").hidden = !!user; $("panel").hidden = !user;
+  if (!user) { unsub.forEach((u) => u()); unsub = []; last = null; return; }
+  listen();
 });
 </script>
 </body>
