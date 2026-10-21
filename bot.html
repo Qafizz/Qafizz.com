@@ -62,6 +62,12 @@
     </div>
 
     <div class="card">
+      <div class="muted">Paused wallets (lost 10¢ — not copied until you unpause)</div>
+      <ul id="paused"><li class="muted">none</li></ul>
+      <p id="pmsg" class="muted"></p>
+    </div>
+
+    <div class="card">
       <div class="muted">Open coins</div>
       <ul id="open"><li class="muted">none</li></ul>
     </div>
@@ -101,6 +107,13 @@ async function setBuying(on) {
     $("msg").textContent = (on ? "Start" : "Pause") + " sent — the PC applies it within ~10 s.";
   } catch (e) { $("msg").textContent = "Not allowed: " + (e.code || e.message); }
 }
+window.unpause = async (addr) => {
+  $("pmsg").textContent = "Sending unpause…";
+  try {
+    await setDoc(doc(db, "bot", "unpause"), { addr, at: serverTimestamp(), by: auth.currentUser.email });
+    $("pmsg").textContent = "Unpause sent — the PC applies it within ~10 s.";
+  } catch (e) { $("pmsg").textContent = "Not allowed: " + (e.code || e.message); }
+};
 $("startBtn").onclick = () => setBuying(true);
 $("pauseBtn").onclick = () => setBuying(false);
 
@@ -124,6 +137,11 @@ function render(s) {
   $("cap").textContent = `$${Math.max(0, -(s.loss_now ?? 0)).toFixed(2)} / $${(s.stop_cad ?? 0).toFixed(2)}`;
   $("nwallets").textContent = s.wallets ?? "–";
   $("feed").textContent = s.feed ?? "–";
+  const paused = s.paused || [];
+  $("paused").innerHTML = paused.length
+    ? paused.map(p => `<li style="margin:8px 0">${p.name}… <span class="off">$${Math.abs(p.loss).toFixed(2)} lost</span>
+        <button class="ghost" style="width:auto;padding:6px 12px;margin:0 0 0 8px" onclick="unpause('${p.addr}')">Unpause</button></li>`).join("")
+    : '<li class="muted">none</li>';
   const open = s.open || [];
   $("open").innerHTML = open.length
     ? open.map(o => `<li>${o.sym} <span class="${o.pct >= 0 ? "on" : "off"}">${o.pct >= 0 ? "+" : ""}${Math.round(o.pct)}%</span></li>`).join("")
