@@ -119,7 +119,8 @@ function render(s) {
   $("seen").className = fresh ? "muted" : "warn";
   $("pnl").textContent = cad(s.pnl_cad ?? 0); $("pnl").className = (s.pnl_cad ?? 0) >= 0 ? "on" : "off";
   $("trades").textContent = `${s.trades ?? 0} / ${s.wins ?? 0}`;
-  $("wallet").textContent = `${(s.wallet_sol ?? 0).toFixed(4)} SOL`;
+  const addr = s.wallet_addr || "";
+  $("wallet").textContent = `${addr ? addr.slice(0, 4) + "…" + addr.slice(-4) + " · " : ""}${(s.wallet_sol ?? 0).toFixed(4)} SOL`;
   $("cap").textContent = `$${Math.max(0, -(s.loss_now ?? 0)).toFixed(2)} / $${(s.stop_cad ?? 0).toFixed(2)}`;
   $("nwallets").textContent = s.wallets ?? "–";
   $("feed").textContent = s.feed ?? "–";
