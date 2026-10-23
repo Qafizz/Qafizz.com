@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Bot Control</title>
+<title>Live Bot</title>
 <style>
   :root { --bg:#0e0f12; --card:#181a20; --line:#2a2d35; --text:#eceef2; --muted:#9097a3; --green:#2fbf71; --red:#e5484d; --amber:#f0b429; }
   * { box-sizing:border-box; }
@@ -28,7 +28,7 @@
 </head>
 <body>
 <main>
-  <h1>Copy bot</h1>
+  <h1>Live bot <span class="muted" style="font-size:14px">real money</span></h1>
 
   <section id="login" class="card" hidden>
     <div class="muted">Admin sign-in</div>
@@ -49,15 +49,16 @@
         <button id="pauseBtn" class="pause">Pause buying</button>
       </div>
       <p id="msg" class="muted"></p>
-      <p class="muted">Pause stops new buys. Coins the bot already holds are still sold when the copied wallet sells.</p>
+      <p class="muted">Pause stops new buys. Coins the bot already holds still sell on their own rules.</p>
     </div>
 
     <div class="card">
-      <div class="row"><span class="muted">Profit (this run)</span><span id="pnl">–</span></div>
+      <div class="row"><span class="muted">Profit since reset</span><span id="since">–</span></div>
+      <div class="row"><span class="muted">Profit all time</span><span id="pnl">–</span></div>
       <div class="row"><span class="muted">Trades / wins</span><span id="trades">–</span></div>
       <div class="row"><span class="muted">Wallet</span><span id="wallet">–</span></div>
       <div class="row"><span class="muted">Loss cap (used / max)</span><span id="cap">–</span></div>
-      <div class="row"><span class="muted">Wallets copied</span><span id="nwallets">–</span></div>
+      <div class="row"><span class="muted">Strategies buying</span><span id="nwallets">–</span></div>
       <div class="row"><span class="muted">Live feed</span><span id="feed">–</span></div>
     </div>
 
@@ -72,8 +73,8 @@
     </div>
 
     <div class="card">
-      <div class="muted">Paused wallets (lost 10¢ — not copied until you unpause)</div>
-      <ul id="paused"><li class="muted">none</li></ul>
+      <div class="muted">Strategies (each pauses itself after losing its limit)</div>
+      <div id="strats"><p class="muted">none</p></div>
       <p id="pmsg" class="muted"></p>
     </div>
 
@@ -118,11 +119,12 @@ async function setBuying(on) {
     $("msg").textContent = (on ? "Start" : "Pause") + " sent — the PC applies it within ~10 s.";
   } catch (e) { $("msg").textContent = "Not allowed: " + (e.code || e.message); }
 }
-window.unpause = async (addr) => {
-  $("pmsg").textContent = "Sending unpause…";
+// strategy buttons: bot/unpause {addr: strategy code, action} - the PC bridge pauses/unpauses it
+window.stratAct = async (code, action) => {
+  $("pmsg").textContent = `Sending ${action} ${code}…`;
   try {
-    await setDoc(doc(db, "bot", "unpause"), { addr, at: serverTimestamp(), by: auth.currentUser.email });
-    $("pmsg").textContent = "Unpause sent — the PC applies it within ~10 s.";
+    await setDoc(doc(db, "bot", "unpause"), { addr: code, action, at: serverTimestamp(), by: auth.currentUser.email });
+    $("pmsg").textContent = `${action === "pause" ? "Pause" : "Unpause"} ${code} sent — the PC applies it within ~10 s.`;
   } catch (e) { $("pmsg").textContent = "Not allowed: " + (e.code || e.message); }
 };
 $("capBtn").onclick = async () => {
@@ -154,21 +156,30 @@ function render(s) {
     : fresh ? `PC updated ${age}s ago` : `PC last seen ${Math.round(age / 60)} min ago — it may be off`;
   $("seen").className = fresh ? "muted" : "warn";
   $("pnl").textContent = cad(s.pnl_cad ?? 0); $("pnl").className = (s.pnl_cad ?? 0) >= 0 ? "on" : "off";
+  $("since").textContent = cad(s.loss_now ?? 0); $("since").className = (s.loss_now ?? 0) >= 0 ? "on" : "off";
   $("trades").textContent = `${s.trades ?? 0} / ${s.wins ?? 0}`;
   const addr = s.wallet_addr || "";
   $("wallet").textContent = `${addr ? addr.slice(0, 4) + "…" + addr.slice(-4) + " · " : ""}${(s.wallet_sol ?? 0).toFixed(4)} SOL`;
   $("cap").textContent = `$${Math.max(0, -(s.loss_now ?? 0)).toFixed(2)} / $${(s.stop_cad ?? 0).toFixed(2)}`;
   if (!capTyped && document.activeElement !== $("capIn")) $("capIn").value = Math.round((s.stop_cad ?? 0) * 100);
-  $("nwallets").textContent = s.wallets ?? "–";
+  $("nwallets").textContent = `${s.wallets ?? "–"} of ${(s.strategies || []).length}`;
   $("feed").textContent = s.feed ?? "–";
-  const paused = s.paused || [];
-  $("paused").innerHTML = paused.length
-    ? paused.map(p => `<li style="margin:8px 0">${p.name}… <span class="off">$${Math.abs(p.loss).toFixed(2)} lost</span>
-        <button class="ghost" style="width:auto;padding:6px 12px;margin:0 0 0 8px" onclick="unpause('${p.addr}')">Unpause</button></li>`).join("")
-    : '<li class="muted">none</li>';
+  const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const strats = (s.strategies || []).slice().sort((a, b) => (a.paused - b.paused) || (b.since - a.since));
+  $("strats").innerHTML = strats.length ? strats.map(x => `
+    <div class="row" style="align-items:center;gap:8px">
+      <div style="min-width:0">
+        <b>${esc(x.code)}</b> ${x.paused ? '<span class="off" style="font-size:12px">PAUSED</span>' : '<span class="on" style="font-size:12px">ON</span>'}
+        <div class="muted" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.name)}</div>
+        <div style="font-size:13px"><span class="${x.since >= 0 ? "on" : "off"}">${cad(x.since)}</span>
+          <span class="muted">· ${x.trades} trades · buys ${Math.round(x.size * 100)}¢ · stops at -$${x.limit.toFixed(2)}</span></div>
+      </div>
+      <button class="ghost" style="width:auto;padding:6px 12px;margin:0;flex:none"
+        onclick="stratAct('${esc(x.code)}','${x.paused ? "unpause" : "pause"}')">${x.paused ? "Unpause" : "Pause"}</button>
+    </div>`).join("") : '<p class="muted">none</p>';
   const open = s.open || [];
   $("open").innerHTML = open.length
-    ? open.map(o => `<li>${o.sym} <span class="${o.pct >= 0 ? "on" : "off"}">${o.pct >= 0 ? "+" : ""}${Math.round(o.pct)}%</span></li>`).join("")
+    ? open.map(o => `<li>${esc(o.sym)} <span class="muted">${esc(o.strat || "")}</span> <span class="${o.pct >= 0 ? "on" : "off"}">${o.pct >= 0 ? "+" : ""}${Math.round(o.pct)}%</span></li>`).join("")
     : '<li class="muted">none</li>';
 }
 
